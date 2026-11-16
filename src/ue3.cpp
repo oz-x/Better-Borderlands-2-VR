@@ -239,12 +239,24 @@ UObject* object_at(int32_t index) {
     return g_objects->data[index];
 }
 
+// Reads an object's GObjects index; -1 if the memory is no longer readable (the object was
+// freed and its pages released). No C++ objects here: __try needs a function without unwinding.
+int32_t read_internal_index(const UObject* obj) {
+    __try {
+        return field<int32_t>(obj, off::object_internal_index);
+    } __except (GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION ? EXCEPTION_EXECUTE_HANDLER
+                                                                 : EXCEPTION_CONTINUE_SEARCH) {
+        return -1;
+    }
+}
+
 bool is_live(const UObject* obj) {
     if (obj == nullptr || g_objects == nullptr) {
         return false;
     }
-    // The pointer may be stale; only trust it if GObjects still maps its slot back to it.
-    const int32_t index = field<int32_t>(obj, off::object_internal_index);
+    // The pointer may be stale (even freed): only trust it if GObjects still maps its slot
+    // back to it.
+    const int32_t index = read_internal_index(obj);
     return index >= 0 && index < g_objects->count && g_objects->data[index] == obj;
 }
 

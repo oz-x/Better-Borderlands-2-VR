@@ -26,10 +26,25 @@ int32_t g_arg_x = -1, g_arg_y = -1, g_arg_width = -1, g_arg_height = -1;
 uint16_t g_args_size = 0;
 std::string g_menu_name;  // last reported menu, for the log
 
-// Menu flags live on BL2's own movie classes, so they are resolved per class.
+// BL2 screens that are menus but set neither bFullscreenMovie nor bPauseGameWhileActive
+// (input/focus flags do not tell them apart from on-screen notifications).
+constexpr const char* kMenuClasses[] = {
+    "StatusMenuExGFxMovie",         // backpack, map, missions, skills, challenges
+    "QuestAcceptGFxMovie",          // mission accept / mission complete and rewards
+    "VendingMachineExGFxMovie",     // vendors
+    "TwoPanelInterfaceGFxMovie",    // bank, stash, Claptrap's storage
+    "FastTravelStationGFxMovie",
+    "VehicleSpawnStationGFxMovie",
+    "TradingGFxMovie",
+    "CustomizationGFxMovie",
+    "ItemInspectionGFxMovie",
+};
+
+// Menu facts live on BL2's own movie classes, so they are resolved once per class.
 struct MenuFlags {
-    ue3::BoolRef fullscreen;  // bFullscreenMovie (pause, vendors...)
+    ue3::BoolRef fullscreen;  // bFullscreenMovie (pause, ...)
     ue3::BoolRef pauses;      // bPauseGameWhileActive
+    bool listed = false;      // one of kMenuClasses (or derived from one)
 };
 std::unordered_map<const ue3::UClass*, MenuFlags> g_menu_flags;
 
@@ -37,25 +52,20 @@ const MenuFlags& menu_flags(const ue3::UObject* movie) {
     const ue3::UClass* cls = ue3::class_of(movie);
     auto it = g_menu_flags.find(cls);
     if (it == g_menu_flags.end()) {
-        it = g_menu_flags
-                 .emplace(cls, MenuFlags{ue3::find_bool(cls, "bFullscreenMovie"),
-                                         ue3::find_bool(cls, "bPauseGameWhileActive")})
-                 .first;
+        MenuFlags flags{ue3::find_bool(cls, "bFullscreenMovie"),
+                        ue3::find_bool(cls, "bPauseGameWhileActive")};
+        for (const char* name : kMenuClasses) {
+            flags.listed = flags.listed || ue3::is_a(movie, name);
+        }
+        it = g_menu_flags.emplace(cls, flags).first;
     }
     return it->second;
 }
 
-// An open movie that is a menu (shown on the theater screen), not part of the HUD. The
-// status menu (backpack, map, skills, missions) sets neither flag, and input/focus flags do
-// not tell it apart from on-screen notifications, so it is named explicitly.
+// An open movie that is a menu (shown on the theater screen), not part of the HUD.
 bool is_menu(const ue3::UObject* movie) {
-    static ue3::UClass* status_menu = nullptr;
-    if (status_menu == nullptr) {
-        status_menu = ue3::find_class("StatusMenuExGFxMovie");
-    }
     const MenuFlags& flags = menu_flags(movie);
-    return flags.fullscreen.get(movie) || flags.pauses.get(movie) ||
-           (status_menu != nullptr && ue3::is_a(movie, status_menu));
+    return flags.listed || flags.fullscreen.get(movie) || flags.pauses.get(movie);
 }
 
 void resolve(const ue3::UObject* movie) {
