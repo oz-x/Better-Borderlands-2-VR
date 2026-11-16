@@ -32,6 +32,8 @@ struct StereoFrame {
     HudPanel wrist;
     HudPanel view;
     XrVector3f eye_position[2]{};  // where each eye image was rendered from
+    bool reticle_visible = false;  // the sight where the gun points (LOCAL space, metres)
+    XrVector3f reticle{};
 };
 
 // ---- game thread ----

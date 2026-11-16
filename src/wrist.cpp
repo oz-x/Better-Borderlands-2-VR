@@ -429,6 +429,86 @@ void wrist_draw(IDirect3DDevice9* device, const StereoFrame& frame, int eye_inde
     g_internal = false;
 }
 
+void reticle_draw(IDirect3DDevice9* device, const StereoFrame& frame, int eye_index,
+                  UINT width, UINT height) {
+    if (!frame.reticle_visible || width == 0 || height == 0) {
+        return;
+    }
+    const XrView& view = frame.xr.views[eye_index];
+    const EyeCamera eye{to_vec(frame.eye_position[eye_index]), conjugate(view.pose.orientation),
+                        frame.tan_half_x, frame.tan_half_x * height / static_cast<float>(width),
+                        static_cast<float>(width), static_cast<float>(height)};
+    Vertex centre{};
+    if (!project(eye, to_vec(frame.reticle), 0.0f, 0.0f, &centre)) {
+        return;
+    }
+    // Fixed angular size (readable near and far): radii in tangent units -> pixels.
+    const float pixels_per_tan = eye.width * 0.5f / eye.tan_x;
+    const float ring_in = 0.011f * pixels_per_tan, ring_out = 0.016f * pixels_per_tan;
+    const float dot_radius = 0.0035f * pixels_per_tan, outline = 1.5f;
+
+    struct ColorVertex {
+        float x, y, z, rhw;
+        D3DCOLOR color;
+    };
+    constexpr int kSegments = 32;
+    auto ring = [&](float inner, float outer, D3DCOLOR color) {
+        ColorVertex strip[(kSegments + 1) * 2];
+        for (int i = 0; i <= kSegments; ++i) {
+            const float a = 2.0f * kPi * i / kSegments;
+            const float c = std::cos(a), s = std::sin(a);
+            strip[i * 2] = {centre.x + c * outer, centre.y + s * outer, 0.0f, 1.0f, color};
+            strip[i * 2 + 1] = {centre.x + c * inner, centre.y + s * inner, 0.0f, 1.0f, color};
+        }
+        device->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, kSegments * 2, strip, sizeof(ColorVertex));
+    };
+
+    if (g_state == nullptr && FAILED(device->CreateStateBlock(D3DSBT_ALL, &g_state))) {
+        return;
+    }
+    g_state->Capture();
+    device->SetVertexShader(nullptr);
+    device->SetPixelShader(nullptr);
+    device->SetFVF(D3DFVF_XYZRHW | D3DFVF_DIFFUSE);
+    device->SetTexture(0, nullptr);
+    D3DVIEWPORT9 viewport{0, 0, width, height, 0.0f, 1.0f};
+    g_internal = true;
+    device->SetViewport(&viewport);
+    g_internal = false;
+    device->SetRenderState(D3DRS_ZENABLE, FALSE);
+    device->SetRenderState(D3DRS_ZWRITEENABLE, FALSE);
+    device->SetRenderState(D3DRS_STENCILENABLE, FALSE);
+    device->SetRenderState(D3DRS_SCISSORTESTENABLE, FALSE);
+    device->SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
+    device->SetRenderState(D3DRS_LIGHTING, FALSE);
+    device->SetRenderState(D3DRS_FOGENABLE, FALSE);
+    device->SetRenderState(D3DRS_ALPHATESTENABLE, FALSE);
+    device->SetRenderState(D3DRS_SRGBWRITEENABLE, FALSE);
+    device->SetRenderState(D3DRS_COLORWRITEENABLE, 0xF);
+    device->SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
+    device->SetRenderState(D3DRS_SEPARATEALPHABLENDENABLE, FALSE);
+    device->SetRenderState(D3DRS_BLENDOP, D3DBLENDOP_ADD);
+    device->SetRenderState(D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+    device->SetRenderState(D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    device->SetTextureStageState(0, D3DTSS_COLOROP, D3DTOP_SELECTARG1);
+    device->SetTextureStageState(0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
+    device->SetTextureStageState(0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1);
+    device->SetTextureStageState(0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
+    device->SetTextureStageState(1, D3DTSS_COLOROP, D3DTOP_DISABLE);
+    device->SetTextureStageState(1, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
+
+    const D3DCOLOR shadow = D3DCOLOR_ARGB(150, 0, 0, 0);
+    const D3DCOLOR white = D3DCOLOR_ARGB(235, 255, 255, 255);
+    ring(ring_in - outline, ring_out + outline, shadow);  // outline: visible on snow too
+    ring(0.0f, dot_radius + outline, shadow);
+    ring(ring_in, ring_out, white);
+    ring(0.0f, dot_radius, white);
+
+    g_internal = true;
+    g_state->Apply();
+    g_internal = false;
+}
+
 void wrist_dump(IDirect3DDevice9* device) {
     if (g_texture == nullptr) {
         LOG("Wrist HUD dump: no texture");

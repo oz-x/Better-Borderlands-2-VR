@@ -36,7 +36,9 @@ Opciones > Vídeo.
 
 El arma va en tu mano derecha: apuntas y disparas con el mando, como en un juego VR. La cabeza
 mira libre y caminas hacia donde miras. El mod presenta los mandos al juego como un mando de
-Xbox, así que todo funciona igual en solitario y en cooperativo (y vibran al disparar).
+Xbox, así que todo funciona igual en solitario y en cooperativo (y vibran al disparar). Una mira
+(círculo blanco con punto) marca dónde apunta el arma, sobre lo que haya en esa línea: pared,
+enemigo o suelo, y a la distancia correcta.
 
 | Mando del Quest | Acción en Borderlands 2 |
 |---|---|
@@ -82,6 +84,7 @@ nada mas: es el multijugador normal de Borderlands 2 (Steam / SHiFT).
 
 - `WorldScale`: escala del mundo (100 = tamaño real).
 - `AimMode`: 2 = mando derecho (por defecto), 1 = cabeza, 0 = stick/ratón.
+- `Reticle`: 1 = mira donde apunta el arma (por defecto), 0 = sin mira.
 - `GunOffsetForward/Right/Up`: mueve el arma dentro de la mano (unidades ~ cm). El mod mide
   donde va el arma en el modelo y la pone en el mando; si la notas desplazada, ajusta esto.
 - `TurnSpeed`: velocidad del giro con el stick derecho en grados/segundo (180 por defecto).

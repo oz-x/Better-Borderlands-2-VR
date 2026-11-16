@@ -35,6 +35,9 @@ void wrist_on_device_lost();
 // (0 left, 1 right), called at Present once the eye images are known.
 void wrist_draw(IDirect3DDevice9* device, const StereoFrame& frame, int eye, UINT width,
                 UINT height);
+// Draws the sight (frame.reticle) into the current render target, the image of eye `eye`.
+void reticle_draw(IDirect3DDevice9* device, const StereoFrame& frame, int eye, UINT width,
+                  UINT height);
 // Debug: writes the HUD texture (with alpha) to bl2vr_hud.tga.
 void wrist_dump(IDirect3DDevice9* device);
 

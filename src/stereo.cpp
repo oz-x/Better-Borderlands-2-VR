@@ -191,7 +191,7 @@ void submit_xr(const StereoFrame& frame, int left_slot, int right_slot) {
 // Draws the VR HUD panels (wrist.h) into both captured eye images, each with its own camera.
 void draw_hud_panels(IDirect3DDevice9* device, const StereoFrame& frame, int left_slot,
                      int right_slot) {
-    if (!frame.wrist.visible && !frame.view.visible) {
+    if (!frame.wrist.visible && !frame.view.visible && !frame.reticle_visible) {
         return;
     }
     IDirect3DSurface9* target = nullptr;
@@ -204,6 +204,7 @@ void draw_hud_panels(IDirect3DDevice9* device, const StereoFrame& frame, int lef
         for (int eye = 0; eye < 2; ++eye) {
             device->SetRenderTarget(0, g_snap_surface[slots[eye]]);
             wrist_draw(device, frame, eye, g_snap_width, g_snap_height);
+            reticle_draw(device, frame, eye, g_snap_width, g_snap_height);
         }
         device->EndScene();
     }

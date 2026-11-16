@@ -42,6 +42,7 @@ void config_load() {
     c.vr_enabled = read_int(ini, L"VR", L"Enabled", c.vr_enabled) != 0;
     c.world_scale = read_float(ini, L"VR", L"WorldScale", c.world_scale);
     c.aim_mode = std::clamp(read_int(ini, L"VR", L"AimMode", c.aim_mode), 0, 2);
+    c.reticle = read_int(ini, L"VR", L"Reticle", c.reticle) != 0;
     c.turn_speed = read_float(ini, L"VR", L"TurnSpeed", c.turn_speed);
     c.snap_turn = read_float(ini, L"VR", L"SnapTurn", c.snap_turn);
     c.gun_forward = read_float(ini, L"VR", L"GunOffsetForward", c.gun_forward);

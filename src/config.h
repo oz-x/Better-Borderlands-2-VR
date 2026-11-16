@@ -7,6 +7,7 @@ struct Config {
     bool vr_enabled = true;        // master switch
     float world_scale = 100.0f;    // Unreal units per metre (BL2 eye height 150 uu = 1.5 m)
     int aim_mode = 2;              // 0 = stick/mouse, 1 = head, 2 = right controller
+    bool reticle = true;           // sight where the gun points (right-controller aim)
     float turn_speed = 180.0f;     // smooth turning with the right stick, degrees per second
     float snap_turn = 0.0f;        // > 0: snap turning by this many degrees instead
     // Weapon grip offset from the controller, in Unreal units (forward, right, up), so the gun

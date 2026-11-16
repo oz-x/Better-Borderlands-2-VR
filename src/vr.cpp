@@ -603,12 +603,10 @@ XrVector3f to_xr(Vec3 v) {
     return {v.x, v.y, v.z};
 }
 
-// Places the VR HUD panels of a stereo frame (see wrist.h). `tan_x` is the symmetric
-// half-frustum the eyes render with.
-void place_hud_panels(StereoFrame& frame, const xr::ControllerInput& input, float tan_x) {
+// Eye positions as eye_pov renders them (without positional tracking the head stays at the
+// recentred position and only the eye separation remains), for drawing into the eye images.
+void set_eye_positions(StereoFrame& frame) {
     const xr::FrameInfo& xr = frame.xr;
-    // Eye positions as eye_pov renders them (without positional tracking the head stays at
-    // the recentred position and only the eye separation remains).
     const Vec3 middle =
         (to_vec(xr.views[0].pose.position) + to_vec(xr.views[1].pose.position)) * 0.5f;
     for (int eye = 0; eye < 2; ++eye) {
@@ -616,7 +614,12 @@ void place_hud_panels(StereoFrame& frame, const xr::ControllerInput& input, floa
             to_xr(config().positional ? to_vec(xr.views[eye].pose.position)
                                       : g_ref_position + (to_vec(xr.views[eye].pose.position) - middle));
     }
+}
 
+// Places the VR HUD panels of a stereo frame (see wrist.h). `tan_x` is the symmetric
+// half-frustum the eyes render with.
+void place_hud_panels(StereoFrame& frame, const xr::ControllerInput& input, float tan_x) {
+    const xr::FrameInfo& xr = frame.xr;
     // View panel: the centre of the HUD floating in front of the eyes, the same size it had
     // on the flat HUD (HudScale of the view at HudDistance).
     const XrQuaternionf& head = xr.views[0].pose.orientation;
@@ -867,6 +870,67 @@ void __fastcall arms_update_hook(ue3::UObject* pawn, void* edx) {
     }
 }
 
+// Actor.Trace(out HitLocation, out HitNormal, TraceEnd, TraceStart, bTraceActors, Extent,
+// out HitInfo, ExtraTraceFlags) on the local pawn (which the trace ignores). Returns the hit
+// distance from `start` in Unreal units, or -1 when nothing is hit. Every parameter is set
+// explicitly: called through ProcessEvent, optional ones are read as given.
+float trace_distance(ue3::UObject* pawn, const Vec3& start, const Vec3& end) {
+    static ue3::UFunction* trace = nullptr;
+    static int32_t off_hit = -1, off_end = -1, off_start = -1, off_return = -1;
+    static ue3::BoolRef trace_actors;
+    static uint16_t params_size = 0;
+    if (trace == nullptr) {
+        trace = ue3::find_function(pawn, "Trace");
+        if (trace == nullptr) {
+            return -1.0f;
+        }
+        off_hit = ue3::property_offset(trace, "HitLocation");
+        off_end = ue3::property_offset(trace, "TraceEnd");
+        off_start = ue3::property_offset(trace, "TraceStart");
+        off_return = ue3::property_offset(trace, "ReturnValue");
+        trace_actors = ue3::find_bool(trace, "bTraceActors");
+        params_size = ue3::field<uint16_t>(trace, ue3::off::function_params_size);
+        LOG("Reticle trace: params %u, hit @%d end @%d start @%d actors @%d return @%d",
+            params_size, off_hit, off_end, off_start, trace_actors.offset, off_return);
+    }
+    if (off_hit < 0 || off_end < 0 || off_start < 0 || off_return < 0 || params_size > 256) {
+        return -1.0f;
+    }
+    alignas(16) uint8_t params[256] = {};
+    ue3::field<ue3::FVector>(params, off_end) = {end.x, end.y, end.z};
+    ue3::field<ue3::FVector>(params, off_start) = {start.x, start.y, start.z};
+    trace_actors.set(reinterpret_cast<ue3::UObject*>(params), true);
+    ue3::call_function(pawn, trace, params);
+    if (ue3::field<ue3::UObject*>(params, off_return) == nullptr) {
+        return -1.0f;  // nothing blocks the line
+    }
+    const auto& hit = ue3::field<ue3::FVector>(params, off_hit);
+    const Vec3 d{hit.x - start.x, hit.y - start.y, hit.z - start.z};
+    return std::sqrt(dot(d, d));
+}
+
+// The sight: where the gun in the right hand points (the line shots follow, see
+// trace_start_hook and update_aim), placed on whatever that line hits so both eyes see it
+// at the right depth.
+void place_reticle(StereoFrame& frame, const xr::ControllerInput& input) {
+    constexpr float kRange = 20000.0f;  // Unreal units (200 m)
+    const xr::HandInput& right = input.hand[xr::kHandRight];
+    HandPose hand;
+    if (!config().reticle || g_local_pawn == nullptr || !g_arms_eye_valid ||
+        !right.pose_valid || !hand_world(g_arms_eye, &hand)) {
+        return;
+    }
+    const Vec3 start{hand.location.x, hand.location.y, hand.location.z};
+    float distance = trace_distance(g_local_pawn, start, start + hand.forward * kRange);
+    if (distance < 0.0f) {
+        distance = kRange;  // sky: far away
+    }
+    const Vec3 direction = rotate(right.aim.orientation, {0.0f, 0.0f, -1.0f});
+    frame.reticle = to_xr(to_vec(right.aim.position) +
+                          direction * (distance / config().world_scale));
+    frame.reticle_visible = true;
+}
+
 // Finds the held weapon's first-person mesh for the arm hook's grip calibration, and hides the
 // screen-centre crosshair, which no longer matches where a hand-held gun points.
 void update_weapon() {
@@ -1011,6 +1075,8 @@ void __fastcall draw_hook(void* viewport, void* edx, BOOL should_present) {
     open_inventory_on_stick(pc, input);
     g_frame_input = input;
     update_weapon();
+    set_eye_positions(frame);
+    place_reticle(frame, input);
     if (hud_set_wrist(config().wrist_hud)) {
         place_hud_panels(frame, input, tan_x);
     }
