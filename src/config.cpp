@@ -57,6 +57,12 @@ void config_load() {
     c.mirror = read_int(ini, L"VR", L"DesktopMirror", c.mirror) != 0;
     c.hud_scale = read_float(ini, L"VR", L"HudScale", c.hud_scale);
     c.hud_distance = read_float(ini, L"VR", L"HudDistance", c.hud_distance);
+    c.wrist_hud = read_int(ini, L"VR", L"WristHud", c.wrist_hud) != 0;
+    c.wrist_size = read_float(ini, L"VR", L"WristHudSize", c.wrist_size);
+    c.wrist_x = read_float(ini, L"VR", L"WristHudOffsetX", c.wrist_x);
+    c.wrist_y = read_float(ini, L"VR", L"WristHudOffsetY", c.wrist_y);
+    c.wrist_z = read_float(ini, L"VR", L"WristHudOffsetZ", c.wrist_z);
+    c.wrist_tilt = read_float(ini, L"VR", L"WristHudTilt", c.wrist_tilt);
     c.auto_theater = read_int(ini, L"VR", L"MenusOnScreen", c.auto_theater) != 0;
     c.use_9on12 = read_int(ini, L"Debug", L"Use9On12", c.use_9on12) != 0;
     c.fake_xr = read_int(ini, L"Debug", L"FakeHeadset", c.fake_xr) != 0;

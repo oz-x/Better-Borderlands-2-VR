@@ -96,14 +96,15 @@ void gamepad_publish(const xr::ControllerInput& input, float move_rotation, bool
         pad.sThumbLY = axis(forward * c - strafe * s);
         // Right stick: in gameplay the mod turns the body itself (see update_aim), so the game
         // only gets the horizontal axis in menus. Vertical look comes from the hand, so that
-        // axis is free: up = D-pad up, down = Back (inventory / map).
+        // axis is free: up = D-pad up (quick weapon select); down opens the backpack in
+        // gameplay (vr.cpp calls ShowStatusMenu_Inventory) and is B (close) in menus.
         pad.sThumbRX = in_menu ? axis(right.stick.x) : 0;
         const bool vertical = std::abs(right.stick.y) > 0.7f && std::abs(right.stick.x) < 0.5f;
         if (vertical && right.stick.y > 0.0f) {
             pad.wButtons |= XINPUT_GAMEPAD_DPAD_UP;
         }
-        if (vertical && right.stick.y < 0.0f) {
-            pad.wButtons |= XINPUT_GAMEPAD_BACK;
+        if (vertical && right.stick.y < 0.0f && in_menu) {
+            pad.wButtons |= XINPUT_GAMEPAD_B;
         }
         pad.bLeftTrigger = trigger(left.trigger);    // aim down sights
         pad.bRightTrigger = trigger(right.trigger);  // fire

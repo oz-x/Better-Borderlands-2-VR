@@ -14,6 +14,7 @@
 #include "stereo.h"
 #include "ue3.h"
 #include "vr.h"
+#include "wrist.h"
 
 using Microsoft::WRL::ComPtr;
 
@@ -43,6 +44,10 @@ ResetFn g_reset = nullptr;
 SceneFn g_begin_scene = nullptr;
 SceneFn g_end_scene = nullptr;
 SetRenderTargetFn g_set_render_target = nullptr;
+using SetDepthStencilFn = HRESULT(STDMETHODCALLTYPE*)(IDirect3DDevice9*, IDirect3DSurface9*);
+using SetViewportFn = HRESULT(STDMETHODCALLTYPE*)(IDirect3DDevice9*, const D3DVIEWPORT9*);
+SetDepthStencilFn g_set_depth_stencil = nullptr;
+SetViewportFn g_set_viewport = nullptr;
 
 // Detours the function behind a COM vtable slot. Inline detours survive the Steam overlay (and
 // anything else) rewriting the device's per-instance vtable after us, which silently bypassed
@@ -90,6 +95,7 @@ HRESULT STDMETHODCALLTYPE hook_present(IDirect3DDevice9* device, const RECT* src
             LOG("TRACE end");
         }
     }
+    wrist_on_present();  // the next eye images belong to a new frame
     if (!stereo_on_present(device)) {
         return D3D_OK;  // frame consumed by VR, nothing to show on the desktop
     }
@@ -138,6 +144,7 @@ HRESULT STDMETHODCALLTYPE hook_end_scene(IDirect3DDevice9* device) {
             bb->Release();
         }
     }
+    wrist_on_end_scene(device);  // the HUD texture is complete; eye image is the target again
     stereo_on_end_scene(device);
     return g_end_scene(device);
 }
@@ -152,7 +159,21 @@ HRESULT STDMETHODCALLTYPE hook_set_render_target(IDirect3DDevice9* device, DWORD
         LOG("TRACE SetRenderTarget0 %p (%ux%u fmt=%d)", (void*)surface, desc.Width, desc.Height,
             desc.Format);
     }
-    return g_set_render_target(device, index, surface);
+    return g_set_render_target(device, index, wrist_on_set_render_target(index, surface));
+}
+
+HRESULT STDMETHODCALLTYPE hook_set_depth_stencil(IDirect3DDevice9* device,
+                                                 IDirect3DSurface9* surface) {
+    return g_set_depth_stencil(device, wrist_on_set_depth_stencil(surface));
+}
+
+HRESULT STDMETHODCALLTYPE hook_set_viewport(IDirect3DDevice9* device, const D3DVIEWPORT9* viewport) {
+    if (g_trace_frames.load() > 0 && viewport != nullptr) {
+        LOG("TRACE SetViewport %lu,%lu %lux%lu", viewport->X, viewport->Y, viewport->Width,
+            viewport->Height);
+    }
+    wrist_on_set_viewport(device, viewport);
+    return g_set_viewport(device, viewport);
 }
 
 HRESULT STDMETHODCALLTYPE hook_create_device(IDirect3D9* d3d, UINT adapter, D3DDEVTYPE type,
@@ -177,6 +198,10 @@ HRESULT STDMETHODCALLTYPE hook_create_device(IDirect3D9* d3d, UINT adapter, D3DD
         if (void* p = hook_method(g_device, 41, (void*)&hook_begin_scene))
             g_begin_scene = (SceneFn)p;
         if (void* p = hook_method(g_device, 42, (void*)&hook_end_scene)) g_end_scene = (SceneFn)p;
+        if (void* p = hook_method(g_device, 39, (void*)&hook_set_depth_stencil))
+            g_set_depth_stencil = (SetDepthStencilFn)p;
+        if (void* p = hook_method(g_device, 47, (void*)&hook_set_viewport))
+            g_set_viewport = (SetViewportFn)p;
         stereo_on_device_created(g_device);
     }
     return hr;

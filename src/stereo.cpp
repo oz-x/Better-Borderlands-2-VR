@@ -15,6 +15,7 @@
 #include "config.h"
 #include "d3d.h"
 #include "log.h"
+#include "wrist.h"
 
 using Microsoft::WRL::ComPtr;
 
@@ -187,6 +188,35 @@ void submit_xr(const StereoFrame& frame, int left_slot, int right_slot) {
     }
 }
 
+// Draws the VR HUD panels (wrist.h) into both captured eye images, each with its own camera.
+void draw_hud_panels(IDirect3DDevice9* device, const StereoFrame& frame, int left_slot,
+                     int right_slot) {
+    if (!frame.wrist.visible && !frame.view.visible) {
+        return;
+    }
+    IDirect3DSurface9* target = nullptr;
+    IDirect3DSurface9* depth = nullptr;
+    device->GetRenderTarget(0, &target);
+    device->GetDepthStencilSurface(&depth);
+    device->SetDepthStencilSurface(nullptr);  // panels ignore depth
+    if (SUCCEEDED(device->BeginScene())) {
+        const int slots[2] = {left_slot, right_slot};
+        for (int eye = 0; eye < 2; ++eye) {
+            device->SetRenderTarget(0, g_snap_surface[slots[eye]]);
+            wrist_draw(device, frame, eye, g_snap_width, g_snap_height);
+        }
+        device->EndScene();
+    }
+    device->SetRenderTarget(0, target);
+    device->SetDepthStencilSurface(depth);
+    if (target != nullptr) {
+        target->Release();
+    }
+    if (depth != nullptr) {
+        depth->Release();
+    }
+}
+
 }  // namespace
 
 void stereo_queue_frame(const StereoFrame& frame) {
@@ -244,6 +274,7 @@ void stereo_on_device_created(IDirect3DDevice9* device) {
 void stereo_on_device_lost() {
     // D3DPOOL_DEFAULT resources must be gone before IDirect3DDevice9::Reset.
     release_snapshots();
+    wrist_on_device_lost();
 }
 
 void stereo_on_begin_scene(IDirect3DDevice9*) {}
@@ -293,6 +324,12 @@ bool stereo_on_present(IDirect3DDevice9* device) {
         stats_frames = stats_stereo = 0;
     }
 
+    // The engine may end more than two scenes on the back buffer per frame; only now are
+    // the two eye images known, so the VR HUD panels are drawn into them here.
+    if (stereo) {
+        draw_hud_panels(device, frame, left_slot, right_slot);
+    }
+
     if (frame.xr_frame) {
         if (g_on12 && captured >= 1) {
             submit_xr(frame, stereo ? left_slot : right_slot, right_slot);
@@ -303,6 +340,7 @@ bool stereo_on_present(IDirect3DDevice9* device) {
     if (captured >= 1 && g_dump_requested.exchange(false)) {
         dump_surface(device, g_snap_surface[stereo ? left_slot : right_slot], L"bl2vr_left.bmp");
         dump_surface(device, g_snap_surface[right_slot], L"bl2vr_right.bmp");
+        wrist_dump(device);
     }
     frame_done();
     return config().mirror || !frame.xr_frame;

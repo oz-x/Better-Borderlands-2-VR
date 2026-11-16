@@ -22,6 +22,7 @@
 #include "stereo.h"
 #include "ue3.h"
 #include "xr.h"
+#include "wrist.h"
 
 using Microsoft::WRL::ComPtr;
 using namespace bl2vr::mathx;
@@ -98,6 +99,7 @@ ue3::BoolRef g_suppress_crosshair;
 ue3::UObject* g_viewport_client = nullptr;
 int32_t g_name_get_fov = -1;
 int32_t g_name_post_render = -1;
+int32_t g_name_start = -1;
 int32_t g_off_game_players = -1;
 int32_t g_off_actor = -1;
 int32_t g_off_rotation = -1;
@@ -191,6 +193,11 @@ void fake_views(xr::FrameInfo& frame, xr::ControllerInput& input) {
     if (config().fake_fire) {
         right.trigger = (GetTickCount() / 400) % 2 != 0 ? 1.0f : 0.0f;
     }
+    // Left hand low in front of the chest, back of the wrist turned towards the face.
+    xr::HandInput& left = input.hand[xr::kHandLeft];
+    left.pose_valid = true;
+    left.aim.orientation = yaw_pitch_quat(-25.0f, 45.0f);
+    left.aim.position = {-0.10f, -0.17f, -0.38f};
 }
 
 void __fastcall viewpoint_hook(ue3::UObject* pc, void* edx, ue3::FVector* location,
@@ -416,6 +423,10 @@ void manage_resolution(ue3::UObject* pc, const xr::FrameInfo& frame, float tan_x
     ue3::console_command(pc, command);
 }
 
+// Right stick override from the bl2vr_stick.txt debug trigger.
+XrVector2f g_debug_stick{};
+DWORD g_debug_stick_until = 0;
+
 void handle_debug_triggers() {
     if (!config().trace) {
         return;
@@ -443,6 +454,19 @@ void handle_debug_triggers() {
     if (GetFileAttributesW(trace.c_str()) != INVALID_FILE_ATTRIBUTES) {
         DeleteFileW(trace.c_str());
         d3d_request_trace(3);
+    }
+    // bl2vr_stick.txt: "x y" holds the right stick there for half a second (tests stick
+    // actions such as the backpack without touching the controllers).
+    const std::wstring stick = config().dir + L"bl2vr_stick.txt";
+    if (FILE* f = _wfopen(stick.c_str(), L"r")) {
+        float x = 0.0f, y = 0.0f;
+        if (fscanf_s(f, "%f %f", &x, &y) == 2) {
+            g_debug_stick = {x, y};
+            g_debug_stick_until = GetTickCount() + 500;
+            LOG("Debug right stick (%.1f, %.1f)", x, y);
+        }
+        fclose(f);
+        DeleteFileW(stick.c_str());
     }
     // bl2vr_objs.txt: first line = class name; logs every live instance (debugging aid).
     const std::wstring objs = config().dir + L"bl2vr_objs.txt";
@@ -510,6 +534,14 @@ void handle_debug_triggers() {
                             const auto& v = ue3::field<ue3::FVector>(obj, offset);
                             LOG("    %s [%d bytes] = (%g, %g, %g) @%d", ue3::object_name(p).c_str(),
                                 size, v.x, v.y, v.z, offset);
+                        } else if (kind == "IntProperty" || kind == "ByteProperty") {
+                            LOG("    %s %s = %d @%d", kind.c_str(), ue3::object_name(p).c_str(),
+                                kind == "IntProperty" ? ue3::field<int32_t>(obj, offset)
+                                                      : ue3::field<uint8_t>(obj, offset),
+                                offset);
+                        } else if (kind == "ArrayProperty") {
+                            LOG("    %s[] count=%d @%d", ue3::object_name(p).c_str(),
+                                ue3::field<ue3::TArray<void*>>(obj, offset).count, offset);
                         }
                     }
                 }
@@ -547,6 +579,74 @@ void relative_axes(const XrView& view, Vec3* forward, Vec3* right, Vec3* up) {
     *forward = xr_to_ue(yaw_xr(rotate(q, {0, 0, -1}), -g_ref_yaw));
     *right = xr_to_ue(yaw_xr(rotate(q, {1, 0, 0}), -g_ref_yaw));
     *up = xr_to_ue(yaw_xr(rotate(q, {0, 1, 0}), -g_ref_yaw));
+}
+
+// Right stick pushed down (gameplay): open the status menu on the backpack tab, like the
+// keyboard's inventory key. The XInput Back button would open it on the map.
+void open_inventory_on_stick(ue3::UObject* pc, const xr::ControllerInput& input) {
+    static bool was_down = false;
+    const XrVector2f& stick = input.hand[xr::kHandRight].stick;
+    const bool down = input.active && stick.y < -0.7f && std::abs(stick.x) < 0.5f;
+    if (down && !was_down) {
+        static ue3::UFunction* show = ue3::find_function(pc, "ShowStatusMenu_Inventory");
+        if (show != nullptr) {
+            uint8_t args[16] = {};
+            ue3::call_function(pc, show, args);
+        } else {
+            LOG("ShowStatusMenu_Inventory not found");
+        }
+    }
+    was_down = down;
+}
+
+XrVector3f to_xr(Vec3 v) {
+    return {v.x, v.y, v.z};
+}
+
+// Places the VR HUD panels of a stereo frame (see wrist.h). `tan_x` is the symmetric
+// half-frustum the eyes render with.
+void place_hud_panels(StereoFrame& frame, const xr::ControllerInput& input, float tan_x) {
+    const xr::FrameInfo& xr = frame.xr;
+    // Eye positions as eye_pov renders them (without positional tracking the head stays at
+    // the recentred position and only the eye separation remains).
+    const Vec3 middle =
+        (to_vec(xr.views[0].pose.position) + to_vec(xr.views[1].pose.position)) * 0.5f;
+    for (int eye = 0; eye < 2; ++eye) {
+        frame.eye_position[eye] =
+            to_xr(config().positional ? to_vec(xr.views[eye].pose.position)
+                                      : g_ref_position + (to_vec(xr.views[eye].pose.position) - middle));
+    }
+
+    // View panel: the centre of the HUD floating in front of the eyes, the same size it had
+    // on the flat HUD (HudScale of the view at HudDistance).
+    const XrQuaternionf& head = xr.views[0].pose.orientation;
+    const Vec3 head_position =
+        (to_vec(frame.eye_position[0]) + to_vec(frame.eye_position[1])) * 0.5f;
+    const float distance = config().hud_distance > 0.0f ? config().hud_distance : 2.0f;
+    const float view_half_width = config().hud_scale * tan_x * distance *
+                                  hud_layout_hud_fraction(HudLayout::view);
+    frame.view.visible = true;
+    frame.view.centre = to_xr(head_position + rotate(head, {0.0f, 0.0f, -distance}));
+    frame.view.right = to_xr(rotate(head, {view_half_width, 0.0f, 0.0f}));
+    frame.view.up = to_xr(rotate(
+        head, {0.0f, view_half_width * hud_layout_aspect(HudLayout::view), 0.0f}));
+
+    // Wrist panel: on the back of the left wrist like a watch, readable when the forearm is
+    // raised in front of the face. Axes from the left controller's aim pose: normal +Y
+    // (tilted about the forearm towards the body), text up -Z (towards the fingers).
+    const xr::HandInput& hand = input.hand[xr::kHandLeft];
+    if (!input.active || !hand.pose_valid) {
+        return;
+    }
+    const XrQuaternionf& q = hand.aim.orientation;
+    const float tilt = config().wrist_tilt * kPi / 180.0f;
+    const float half_width = config().wrist_size * 0.5f;
+    frame.wrist.visible = true;
+    frame.wrist.centre = to_xr(to_vec(hand.aim.position) +
+                               rotate(q, {config().wrist_x, config().wrist_y, config().wrist_z}));
+    frame.wrist.right = to_xr(rotate(q, {std::cos(tilt), -std::sin(tilt), 0.0f}) * half_width);
+    frame.wrist.up = to_xr(rotate(q, {0.0f, 0.0f, -1.0f}) *
+                           (half_width * hud_layout_aspect(HudLayout::wrist)));
 }
 
 void recenter(const xr::FrameInfo& frame) {
@@ -866,6 +966,9 @@ void __fastcall draw_hook(void* viewport, void* edx, BOOL should_present) {
     } else {
         fake_views(frame.xr, input);
     }
+    if (GetTickCount() < g_debug_stick_until && input.active) {
+        input.hand[xr::kHandRight].stick = g_debug_stick;
+    }
     if (frame.xr.views_valid && g_recenter_pending) {
         g_recenter_pending = false;
         recenter(frame.xr);
@@ -884,6 +987,7 @@ void __fastcall draw_hook(void* viewport, void* edx, BOOL should_present) {
     const bool menu = config().auto_theater && pc != nullptr && hud_menu_open();
     if (pc == nullptr || g_theater || menu || !frame.xr.views_valid) {
         frame.mode = FrameMode::theater;
+        hud_set_wrist(false);
         hud_layout(-1, bb_width, bb_height, 1.0f);
         stereo_queue_frame(frame);
         g_draw_original(viewport, edx, should_present);
@@ -904,15 +1008,25 @@ void __fastcall draw_hook(void* viewport, void* edx, BOOL should_present) {
     g_player_view = g_local_pawn != nullptr && !cinematic.get(pc);
     move_rotation = update_aim(pc, frame.xr, input);
     in_menu = false;
+    open_inventory_on_stick(pc, input);
     g_frame_input = input;
     update_weapon();
+    if (hud_set_wrist(config().wrist_hud)) {
+        place_hud_panels(frame, input, tan_x);
+    }
     if (config().trace) {
         static DWORD last_status = 0;
         if (GetTickCount() - last_status > 3000) {
             last_status = GetTickCount();
-            LOG("Status: player_view=%d aim_valid=%d input=%d hand=%d pawn=%p grip=%d", g_player_view,
-                g_aim_valid, input.active, input.hand[xr::kHandRight].pose_valid,
-                (void*)g_local_pawn, g_grip_valid);
+            const XrVector3f& head = frame.xr.views[0].pose.position;
+            const XrVector3f& left = input.hand[xr::kHandLeft].aim.position;
+            const XrVector3f& right = input.hand[xr::kHandRight].aim.position;
+            LOG("Status: player_view=%d aim_valid=%d input=%d hands L%d R%d pawn=%p grip=%d "
+                "wrist=%d head (%.2f %.2f %.2f) L (%.2f %.2f %.2f) R (%.2f %.2f %.2f)",
+                g_player_view, g_aim_valid, input.active, input.hand[xr::kHandLeft].pose_valid,
+                input.hand[xr::kHandRight].pose_valid, (void*)g_local_pawn, g_grip_valid,
+                frame.wrist.visible, head.x, head.y, head.z, left.x, left.y, left.z, right.x,
+                right.y, right.z);
         }
     }
 
@@ -980,6 +1094,8 @@ void on_process_event(ue3::UObject* obj, ue3::UFunction* func, void* params, boo
                ue3::is_a(obj, "GameViewportClient")) {
         g_viewport_client = obj;
         LOG("Viewport client: %s", ue3::full_name(obj).c_str());
+    } else if (post && name == g_name_start) {
+        hud_movie_started(obj);  // menus go to the theater screen the frame they open
     }
 }
 
@@ -1047,7 +1163,9 @@ DWORD WINAPI resolve_names_thread(LPVOID) {
         }
         const int32_t post_render = ue3::find_name_index("PostRender");
         const int32_t get_fov = ue3::find_name_index("GetFOVAngle");
+        const int32_t start = ue3::find_name_index("Start");
         if (post_render >= 0 && get_fov >= 0) {
+            g_name_start = start;
             g_name_post_render = post_render;
             g_name_get_fov = get_fov;  // written last: enables the observer
             LOG("Engine names resolved");

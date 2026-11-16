@@ -12,6 +12,14 @@ enum class FrameMode {
     theater,  // one Draw call shown on a virtual screen
 };
 
+// A flat HUD panel of a stereo frame, in the OpenXR LOCAL space (metres).
+struct HudPanel {
+    bool visible = false;
+    XrVector3f centre{};
+    XrVector3f right{};     // half width along the panel's +X (text right)
+    XrVector3f up{};        // half height along the panel's +Y (text up); normal = right x up
+};
+
 struct StereoFrame {
     FrameMode mode = FrameMode::stereo;
     bool xr_frame = false;  // xr::begin_frame succeeded and xr::end_frame is owed
@@ -19,6 +27,11 @@ struct StereoFrame {
     float tan_half_x = 1.0f;  // symmetric frustum the game rendered with
     XrPosef screen_pose{};    // theater screen placement (LOCAL space)
     float screen_width = 3.0f;
+    // HUD pieces drawn into the eye images (see wrist.h): vitals on the left wrist, contextual
+    // prompts in front of the eyes.
+    HudPanel wrist;
+    HudPanel view;
+    XrVector3f eye_position[2]{};  // where each eye image was rendered from
 };
 
 // ---- game thread ----

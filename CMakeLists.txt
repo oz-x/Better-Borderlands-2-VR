@@ -32,6 +32,7 @@ add_library(d3d9 SHARED
     src/xr.cpp
     src/xr_input.cpp
     src/gamepad.cpp
+    src/wrist.cpp
     src/d3d9.def)
 target_include_directories(d3d9 PRIVATE ${TP}/OpenXR-SDK/include)
 target_compile_definitions(d3d9 PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX UNICODE _UNICODE

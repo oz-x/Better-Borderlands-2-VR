@@ -45,7 +45,8 @@ bash tools/package.sh   # -> build/BL2VR.zip
 | `src/vr.cpp` | Hilo de juego: doble `FViewport::Draw`, cámara por ojo, apuntado con el mando, brazos y arma en la mano, origen del disparo, FOV del arma. |
 | `src/xr_input.cpp` | Acciones OpenXR: poses de los mandos, botones, sticks y vibración. |
 | `src/gamepad.cpp` | Mando de Xbox virtual (XInput): los mandos VR se traducen a botones del juego. |
-| `src/hud.cpp` | HUD/menús de Scaleform: HUD centrado con paralaje, menús en pantalla virtual. |
+| `src/hud.cpp` | Películas de Scaleform: HUD hacia los paneles VR, menús en la pantalla virtual. |
+| `src/wrist.cpp` | HUD en VR: desvía el HUD a una textura propia y lo recoloca en la muñeca izquierda y en un panel central. |
 | `src/ue3.cpp` | Reflexión mínima de Unreal Engine 3 (GObjects, GNames, ProcessEvent). |
 | `dist/` | Lo que va en el ZIP: instalador (`instalar.ps1` / `instalar.bat`), `bl2vr.ini`, `LEEME.md`. |
 | `tools/` | Utilidades de depuración (lanzar el juego, volcar imágenes por ojo, pilas). |

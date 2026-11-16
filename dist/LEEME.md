@@ -50,11 +50,12 @@ Xbox, así que todo funciona igual en solitario y en cooperativo (y vibran al di
 | Y | Cambiar de arma |
 | Stick izquierdo | Moverse (hacia donde miras); pulsado = esprintar |
 | Stick derecho izquierda/derecha | Girar el cuerpo (suave; o por saltos con `SnapTurn`); pulsado = cuerpo a cuerpo |
-| Stick derecho abajo | Inventario / mapa (Back) |
-| Stick derecho arriba | Cruceta arriba |
+| Stick derecho abajo | Abrir la mochila (inventario); dentro de un menú, cerrar (Back) |
+| Stick derecho arriba | Selector rápido de armas (cruceta arriba) |
 | Botón ☰ (mando izquierdo) | Pausa |
 
-- En los menús se navega con los sticks y A/B como con un mando de Xbox.
+- En los menús se navega con los sticks y A/B como con un mando de Xbox; los grips (LB/RB)
+  cambian de pestaña (inventario, mapa, misiones, habilidades…).
 - Si en Virtual Desktop tienes activada la emulación de mando de Xbox, desactívala para evitar
   pulsaciones dobles.
 - También funcionan un mando de Xbox/PS o teclado y ratón; en ese caso pon `AimMode=1` (apuntar
@@ -63,6 +64,14 @@ Xbox, así que todo funciona igual en solitario y en cooperativo (y vibran al di
   (mantener pulsado el botón Meta del mando).
 - **F7**: alternar entre VR estereo y "modo cine" (pantalla virtual grande delante de ti).
 - Los menus (pausa, inventario, tiendas, mapa...) aparecen solos en la pantalla virtual.
+
+### HUD
+
+- **Muñeca izquierda (como un reloj):** minimapa y misión arriba, habilidad de acción,
+  escudo/vida y granadas/munición en medio, nivel y XP abajo. Levanta la muñeca delante de la
+  cara para verlo; se desvanece cuando no lo miras.
+- **Delante de ti:** solo la barra de vida del enemigo, los avisos de usar/recoger y los
+  mensajes.
 
 ## Jugar con amigos
 
@@ -78,7 +87,12 @@ nada mas: es el multijugador normal de Borderlands 2 (Steam / SHiFT).
 - `TurnSpeed`: velocidad del giro con el stick derecho en grados/segundo (180 por defecto).
 - `SnapTurn`: si es mayor que 0, el stick derecho gira a saltos de esos grados (p. ej. 30),
   más cómodo si te mareas.
-- `HudScale` / `HudDistance`: tamaño y profundidad del HUD.
+- `WristHud`: 1 = HUD en la muñeca izquierda + panel central (por defecto); 0 = HUD clásico
+  en pantalla.
+- `WristHudSize`: ancho del reloj en metros (0.18). `WristHudOffsetX/Y/Z`: posición respecto
+  al mando izquierdo en metros (X derecha, Y arriba, Z hacia la muñeca). `WristHudTilt`:
+  grados que gira hacia tu cara.
+- `HudScale` / `HudDistance`: tamaño y distancia del panel central (1.0 = como en plano).
 - `RenderWidth` / `RenderHeight`: resolucion por ojo (0 = automatica).
 - `DesktopMirror=0`: no dibujar en la ventana del PC (algo mas de rendimiento).
 

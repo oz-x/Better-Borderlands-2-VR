@@ -22,8 +22,15 @@ struct Config {
     int recenter_key = 0x75;       // VK_F6
     int toggle_vr_key = 0x76;      // VK_F7 (stereo / theater screen)
     bool mirror = true;            // show the right eye on the desktop window
-    float hud_scale = 0.6f;        // fraction of each eye the HUD occupies (1 = full screen)
+    float hud_scale = 1.0f;        // size of the centre HUD panel (1 = as on a flat screen)
     float hud_distance = 2.0f;     // metres the HUD appears in front of you (0 = infinity)
+    // Wrist HUD: the HUD sits on the back of the left wrist, like a watch.
+    bool wrist_hud = true;
+    float wrist_size = 0.18f;      // panel width, metres
+    float wrist_x = 0.0f;          // panel centre in the left controller's aim space, metres
+    float wrist_y = 0.03f;         // (+X right, +Y up, +Z back towards the wrist)
+    float wrist_z = 0.12f;
+    float wrist_tilt = 20.0f;      // degrees the panel turns about the forearm towards the face
     bool auto_theater = true;      // show menus on the theater screen
     // Debug
     bool use_9on12 = true;

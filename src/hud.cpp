@@ -11,6 +11,7 @@
 #include "config.h"
 #include "log.h"
 #include "ue3.h"
+#include "wrist.h"
 
 namespace bl2vr {
 
@@ -27,7 +28,7 @@ std::string g_menu_name;  // last reported menu, for the log
 
 // Menu flags live on BL2's own movie classes, so they are resolved per class.
 struct MenuFlags {
-    ue3::BoolRef fullscreen;  // bFullscreenMovie (pause, inventory, vendors...)
+    ue3::BoolRef fullscreen;  // bFullscreenMovie (pause, vendors...)
     ue3::BoolRef pauses;      // bPauseGameWhileActive
 };
 std::unordered_map<const ue3::UClass*, MenuFlags> g_menu_flags;
@@ -42,6 +43,19 @@ const MenuFlags& menu_flags(const ue3::UObject* movie) {
                  .first;
     }
     return it->second;
+}
+
+// An open movie that is a menu (shown on the theater screen), not part of the HUD. The
+// status menu (backpack, map, skills, missions) sets neither flag, and input/focus flags do
+// not tell it apart from on-screen notifications, so it is named explicitly.
+bool is_menu(const ue3::UObject* movie) {
+    static ue3::UClass* status_menu = nullptr;
+    if (status_menu == nullptr) {
+        status_menu = ue3::find_class("StatusMenuExGFxMovie");
+    }
+    const MenuFlags& flags = menu_flags(movie);
+    return flags.fullscreen.get(movie) || flags.pauses.get(movie) ||
+           (status_menu != nullptr && ue3::is_a(movie, status_menu));
 }
 
 void resolve(const ue3::UObject* movie) {
@@ -82,7 +96,19 @@ void set_viewport(ue3::UObject* movie, int x, int y, int width, int height) {
     ue3::call_function(movie, g_set_viewport, args);
 }
 
+bool g_wrist = false;  // the HUD belongs on the left wrist
+
 }  // namespace
+
+void hud_movie_started(ue3::UObject* object) {
+    if (g_movie_class != nullptr && ue3::is_a(object, g_movie_class) &&
+        std::find(g_movies.begin(), g_movies.end(), object) == g_movies.end()) {
+        g_movies.push_back(object);
+        if (!g_resolved) {
+            resolve(object);
+        }
+    }
+}
 
 void hud_update() {
     // Drop movies that were destroyed since the last scan.
@@ -116,8 +142,7 @@ bool hud_menu_open() {
         if (is_hud(movie) || !g_movie_is_open.get(movie)) {
             continue;
         }
-        const MenuFlags& flags = menu_flags(movie);
-        if (flags.fullscreen.get(movie) || flags.pauses.get(movie)) {
+        if (is_menu(movie)) {
             const std::string name = ue3::object_name(ue3::class_of(movie));
             if (name != g_menu_name) {
                 g_menu_name = name;
@@ -155,13 +180,37 @@ void hud_layout(int eye, unsigned width, unsigned height, float tan_half_x) {
             continue;
         }
         if (is_hud(movie)) {
-            set_viewport(movie, x, y, hud_width, hud_height);
-        } else if (const MenuFlags& flags = menu_flags(movie);
-                   flags.fullscreen.get(movie) || flags.pauses.get(movie)) {
+            if (g_wrist && eye >= 0) {
+                // A 16:9 viewport no other movie uses: the render thread recognises it and
+                // sends the HUD into the wrist texture (see wrist.cpp).
+                const int wrist_width = static_cast<int>(width) - 4;
+                const int wrist_height = std::min(static_cast<int>(height) - 4, wrist_width * 9 / 16);
+                const int wrist_y = (static_cast<int>(height) - wrist_height) / 2 + 1;
+                set_viewport(movie, 2, wrist_y, wrist_width, wrist_height);
+                wrist_set_hud_rect(2, wrist_y, wrist_width, wrist_height);
+            } else {
+                set_viewport(movie, x, y, hud_width, hud_height);
+            }
+        } else if (is_menu(movie)) {
             set_viewport(movie, 0, (static_cast<int>(height) - band) / 2, static_cast<int>(width),
                          band);
         }
     }
+}
+
+bool hud_set_wrist(bool on) {
+    bool hud_open = false;
+    for (ue3::UObject* movie : g_movies) {
+        hud_open = hud_open || (is_hud(movie) && g_movie_is_open.get(movie));
+    }
+    if (on != g_wrist) {
+        g_wrist = on;
+        LOG("HUD %s", on ? "on the left wrist" : "on the screen");
+    }
+    if (!on) {
+        wrist_set_hud_rect(0, 0, 0, 0);
+    }
+    return on && hud_open;
 }
 
 }  // namespace bl2vr
